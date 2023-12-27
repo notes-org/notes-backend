@@ -1,5 +1,7 @@
 from fastapi import HTTPException
-from sqlalchemy.orm import joinedload, Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from sqlalchemy.orm import joinedload, selectinload, Session
 
 from app.db.declarative_base import DeclarativeBase
 
@@ -8,50 +10,25 @@ class Base(DeclarativeBase):
     __abstract__ = True
 
     @classmethod
-    def get(cls, db: Session, select_related: list[str] | None = None, **kwargs):
-        select_related = select_related if select_related else []
-        query = db.query(cls)
-
-        for field, value in kwargs.items():
-            query = query.filter(getattr(cls, field) == value)
-
-        for related_field in select_related:
-            query = query.options(joinedload(getattr(cls, related_field)))
-
-        return query.one_or_none()
-
-    @classmethod
-    def get_list(
-        cls,
-        db: Session,
-        select_related: list[str] | None = None,
-        offset: int | None = None,
-        limit: int | None = None,
-        **kwargs,
+    async def get(
+        cls, db: AsyncSession, select_related: list[str] | None = None, **kwargs
     ):
         select_related = select_related if select_related else []
-        query = db.query(cls)
+        query = select(cls)
 
         for field, value in kwargs.items():
-            if isinstance(value, set):
-                # Filter by each value in the set
-                query = query.filter(getattr(cls, field).in_(value))
-            else:
-                query = query.filter(getattr(cls, field) == value)
+            query = query.where(getattr(cls, field) == value)
 
         for related_field in select_related:
             query = query.options(joinedload(getattr(cls, related_field)))
 
-        if offset:
-            query = query.offset(offset)
-        if limit:
-            query = query.limit(limit)
-
-        return query.all()
+        return (await db.execute(query.limit(1))).scalars().first()
 
     @classmethod
-    def get_or_404(cls, db: Session, select_related: list[str] | None = None, **kwargs):
-        obj = cls.get(db, select_related, **kwargs)
+    async def get_or_404(
+        cls, db: AsyncSession, select_related: list[str] | None = None, **kwargs
+    ):
+        obj = await cls.get(db, select_related, **kwargs)
 
         if obj is None:
             raise HTTPException(
@@ -61,16 +38,34 @@ class Base(DeclarativeBase):
         return obj
 
     @classmethod
-    def get_or_create(cls, db: Session, **kwargs):
-        obj = cls.get(db, **kwargs)
+    async def get_list(
+        cls,
+        db: AsyncSession,
+        select_related: list[str] | None = None,
+        offset: int | None = None,
+        limit: int | None = None,
+        **kwargs,
+    ):
+        select_related = select_related if select_related else []
+        query = select(cls)
 
-        if obj is None:
-            obj = cls(**kwargs)
-            obj.save(db)
-            db.refresh(obj)
+        for field, value in kwargs.items():
+            if isinstance(value, set):
+                # Filter by each value in the set
+                query = query.where(getattr(cls, field).in_(value))
+            else:
+                query = query.where(getattr(cls, field) == value)
 
-        return obj
+        for related_field in select_related:
+            query = query.options(selectinload(getattr(cls, related_field)))
 
-    def save(self, db: Session):
+        if offset:
+            query = query.offset(offset)
+        if limit:
+            query = query.limit(limit)
+
+        return (await db.execute(query)).scalars().all()
+
+    async def save(self, db: AsyncSession):
         db.add(self)
-        db.commit()
+        await db.commit()

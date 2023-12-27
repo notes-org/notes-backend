@@ -1,9 +1,15 @@
-from app.db.session import SessionLocal
+from typing import AsyncGenerator, Generator
 
-def get_db() -> SessionLocal:
-    """Get the database session then close it after the request is complete."""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.session import SessionLocal, AsyncSessionLocal
+
+
+def get_db() -> Generator:
+    with SessionLocal() as db_session:
+        yield db_session
+
+
+async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
+    async with AsyncSessionLocal() as db_session:
+        yield db_session

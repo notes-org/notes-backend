@@ -4,7 +4,8 @@ from datetime import datetime
 
 from fastapi import HTTPException
 from sqlalchemy import Column, DateTime, Integer, String
-from sqlalchemy.orm import Session, relationship
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.scraper import Scraper
@@ -32,7 +33,7 @@ class Resource(Base):
     notes = relationship("Note", back_populates="resource")
 
     @classmethod
-    def create(cls, db: Session, url: str):
+    async def create(cls, db: AsyncSession, url: str):
         scraper = Scraper()
         try:
             data = scraper.scrape_page(url)
@@ -50,20 +51,6 @@ class Resource(Base):
             favicon_url=data["favicon_url"],
             site_name=data["site_name"]
         )
-        resource.save(db)
-
-        return resource
-    
-    @classmethod
-    def get_or_create(cls, db: Session, url: str):
-        url_hash = hash_url(url)
-        resource = cls.get(db, url_hash=url_hash)
-
-        if resource is None:
-            try:
-                cls.create(db, url)
-            except Exception:
-                db.rollback()
-                resource = cls.get(db, url_hash=url_hash)
+        await resource.save(db)
 
         return resource

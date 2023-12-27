@@ -4,7 +4,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import AnyHttpUrl
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 
 from app import deps, models, schemas
 from app.utils import hash_url
@@ -16,8 +17,8 @@ responses = {404: {"model": schemas.ErrorResponse}}
 
 
 @router.get("/users/{username}", response_model=schemas.User, responses=responses)
-def get_user(username: str, db: Annotated[Session, Depends(deps.get_db)]):
-    user = models.User.get_or_404(db, username=username)
+async def get_user(username: str, db: Annotated[AsyncSession, Depends(deps.get_async_db)]):
+    user = await models.User.get_or_404(db, username=username)
     return user
 
 
@@ -27,20 +28,21 @@ def get_user(username: str, db: Annotated[Session, Depends(deps.get_db)]):
     response_model_exclude_unset=True,
     responses=responses,
 )
-def get_resource_or_resources(
-    url: Annotated[AnyHttpUrl | None, None], db: Annotated[Session, Depends(deps.get_db)]
+async def get_resource_or_resources(
+    db: Annotated[AsyncSession, Depends(deps.get_async_db)],
+    url: Annotated[AnyHttpUrl | None, None] = None,
 ):
     if url:
         # Return a single resource
         url_hash = hash_url(url)
-        resource = models.Resource.get_or_404(
+        resource = await models.Resource.get_or_404(
             db, select_related=["notes"], url_hash=url_hash
         )
         return resource
-
-    # Return a list of resources
-    resources = models.Resource.get_list(db, select_related=["notes"])
-    return resources
+    else:
+        # Return a list of resources
+        resources = await models.Resource.get_list(db, select_related=["notes"])
+        return resources
 
 
 @router.post(
@@ -49,24 +51,31 @@ def get_resource_or_resources(
     response_model_exclude_unset=True,
     responses={409: {"model": schemas.ErrorResponse}},
 )
-def create_resource(url: AnyHttpUrl, db: Annotated[Session, Depends(deps.get_db)]):
+async def create_resource(
+    url: AnyHttpUrl, db: Annotated[AsyncSession, Depends(deps.get_async_db)]
+):
     try:
-        resource = models.Resource.create(db, url)
+        resource = await models.Resource.create(db, url)
     except IntegrityError:
         raise HTTPException(status_code=409, detail=f"Resource already exists: {url}")
 
+    resource = await models.Resource.get(
+        db, select_related=["notes"], uuid=resource.uuid
+    )
     return resource
 
 
 @router.get("/notes", response_model=list[schemas.Note])
-def get_notes(url: AnyHttpUrl, db: Annotated[Session, Depends(deps.get_db)]):
+async def get_notes(
+    url: AnyHttpUrl, db: Annotated[AsyncSession, Depends(deps.get_async_db)]
+):
     url_hash = hash_url(url)
-    notes = (
-        db.query(models.Note)
+    query = (
+        select(models.Note)
         .join(models.Resource)
-        .filter(models.Resource.url_hash == url_hash)
-        .all()
+        .where(models.Resource.url_hash == url_hash)
     )
+    notes = (await db.execute(query)).scalars().all()
     return notes
 
 
@@ -75,13 +84,15 @@ def get_notes(url: AnyHttpUrl, db: Annotated[Session, Depends(deps.get_db)]):
     response_model=schemas.Note,
     responses=responses,
 )
-def create_note(
-    url: AnyHttpUrl, body: schemas.NoteCreate, db: Annotated[Session, Depends(deps.get_db)]
+async def create_note(
+    url: AnyHttpUrl,
+    body: schemas.NoteCreate,
+    db: Annotated[AsyncSession, Depends(deps.get_async_db)],
 ):
     url_hash = hash_url(url)
-    resource = models.Resource.get_or_404(db, url_hash=url_hash)
+    resource = await models.Resource.get_or_404(db, url_hash=url_hash)
 
     note = models.Note(resource_id=resource.id, content=json.dumps(body.content))
-    note.save(db)
+    await note.save(db)
 
     return note
