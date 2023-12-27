@@ -3,7 +3,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import v1
+from app.api.v1.router import v1_router
 from app.config import settings
 
 app = FastAPI(title="Notes", debug=settings.DEBUG)
@@ -31,4 +31,4 @@ if settings.BACKEND_CORS_ORIGINS:
     )
 
 # API routes
-app.include_router(v1.router, prefix="/v1")
+app.include_router(v1_router, prefix="/v1")
