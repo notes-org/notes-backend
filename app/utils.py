@@ -1,4 +1,5 @@
 import hashlib
+from typing import Any
 
 
 def hash_url(url: str) -> str:
@@ -10,3 +11,8 @@ def hash_url(url: str) -> str:
 
 def get_favicon_url(tld: str) -> str:
     return f"https://www.google.com/s2/favicons?domain={tld}"
+
+
+def setattrs(obj: object, **kwargs: dict[str, Any]):
+    for key, val in kwargs.items():
+        setattr(obj, key, val)
