@@ -1,75 +1,59 @@
 from typing import Annotated
 
-import requests
-from fastapi import Depends, HTTPException
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import jwt
-from jose.exceptions import ExpiredSignatureError, JWTClaimsError, JWTError
-from sqlalchemy.orm import Session
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
+from pydantic import ValidationError
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import models
-from app.deps.misc import get_db
+from app import models, schemas
+from app.deps.misc import get_async_db
 from app.config import settings
 
-
-def _get_auth_token(
-    authorization: Annotated[HTTPAuthorizationCredentials, Depends(HTTPBearer())],
-) -> str:
-    """Get the auth token from the Authorization header."""
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Authorization header missing")
-    return authorization.credentials
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/v1/auth/token")
 
 
-def _validate_token(token: Annotated[str, Depends(_get_auth_token)]) -> dict:
-    jsonurl = requests.get(f"https://{settings.AUTH0_DOMAIN}/.well-known/jwks.json")
-    jwks = jsonurl.json()
+async def get_user(
+    token: Annotated[str, Depends(oauth2_scheme)],
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+) -> models.User:
+    creds_exc = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
     try:
-        unverified_header = jwt.get_unverified_header(token)
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Error decoding token headers.")
+        payload = jwt.decode(
+            token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
+        )
+        token_data = schemas.TokenData(**payload)
+    except (JWTError, ValidationError):
+        raise creds_exc
 
-    rsa_key = {}
-    for key in jwks["keys"]:
-        if key["kid"] == unverified_header["kid"]:
-            rsa_key = {
-                "kty": key["kty"],
-                "kid": key["kid"],
-                "use": key["use"],
-                "n": key["n"],
-                "e": key["e"],
-            }
+    user = await models.User.get(db, uuid=token_data.sub)
+    if user is None:
+        raise creds_exc
 
-    if rsa_key:
-        try:
-            claims = jwt.decode(
-                token,
-                rsa_key,
-                algorithms=settings.ALGORITHMS,
-                audience=settings.API_AUDIENCE,
-                issuer=f"https://{settings.AUTH0_DOMAIN}/",
-            )
-        except ExpiredSignatureError:
-            raise HTTPException(status_code=401, detail="Token is expired")
-        except JWTClaimsError:
-            raise HTTPException(
-                status_code=401, detail="Invalid claims. Check the audience and issuer"
-            )
-        except Exception:
-            raise HTTPException(
-                status_code=401, detail="Unable to parse authentication token."
-            )
-
-        return claims
-
-    raise HTTPException(status_code=401, detail="Unable to find appropriate key.")
+    return user
 
 
-def authenticate(
-    claims: Annotated[str, Depends(_validate_token)],
-    db: Annotated[Session, Depends(get_db)],
+async def get_active_user(
+    user: Annotated[models.User, Depends(get_user)]
 ) -> models.User:
-    sub = claims.get("sub")
-    user = models.User.get_or_404(db, auth0_sub=sub)
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive user"
+        )
+    return user
+
+
+async def get_active_superuser(
+    user: Annotated[models.User, Depends(get_active_user)]
+) -> models.User:
+    if not user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="The user doesn't have the necessary privileges",
+        )
     return user

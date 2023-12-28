@@ -1,24 +1,26 @@
 import datetime
+import uuid
 
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 
 
 class UserBase(BaseModel):
-    auth0_sub: str
     username: str
-    email: str
+    email: EmailStr
 
     class Config:
         orm_mode=True
 
 
 class UserCreate(UserBase):
-    pass
+    password: str
 
 
 class UserUpdate(UserBase):
-    pass
+    password: str | None = None
 
 
 class User(UserBase):
+    uuid: uuid.UUID
+    is_active: bool = True
     created_at: datetime.datetime
