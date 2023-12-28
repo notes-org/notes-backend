@@ -1,7 +1,7 @@
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import joinedload, selectinload, Session
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.db.declarative_base import DeclarativeBase
 
@@ -32,7 +32,7 @@ class Base(DeclarativeBase):
 
         if obj is None:
             raise HTTPException(
-                status_code=404, detail=f"{cls.__name__} object could not be found"
+                status_code=404, detail=f"{cls.__name__} could not be found"
             )
 
         return obj

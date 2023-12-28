@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import AnyHttpUrl
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,14 +10,12 @@ from app.utils import hash_url
 
 router = APIRouter()
 
-responses = {404: {"model": schemas.ErrorResponse}}
-
 
 @router.get(
     "/",
     response_model=schemas.Resource | list[schemas.Resource],
     response_model_exclude_unset=True,
-    responses=responses,
+    responses={status.HTTP_404_NOT_FOUND: {"model": schemas.ErrorResponse}},
 )
 async def get_resource_or_resources(
     db: Annotated[AsyncSession, Depends(deps.get_async_db)],
@@ -40,7 +38,7 @@ async def get_resource_or_resources(
     "/",
     response_model=schemas.Resource,
     response_model_exclude_unset=True,
-    responses={409: {"model": schemas.ErrorResponse}},
+    responses={status.HTTP_409_CONFLICT: {"model": schemas.ErrorResponse}},
 )
 async def create_resource(
     url: AnyHttpUrl, db: Annotated[AsyncSession, Depends(deps.get_async_db)]
