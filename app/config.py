@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     LOGLEVEL: str = "INFO"
     SECRET_KEY: str = secrets.token_urlsafe(32)
+    ALGORITHM: str = "HS256"
     # 60 minutes * 24 hours * 8 days = 8 days
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8
     # BACKEND_CORS_ORIGINS is a JSON-formatted list of origins
@@ -41,10 +42,6 @@ class Settings(BaseSettings):
             host=values.get("POSTGRES_SERVER"),
             path=f"/{values.get('POSTGRES_DB') or ''}",
         )
-    
-    AUTH0_DOMAIN: str
-    API_AUDIENCE: str
-    ALGORITHMS: list[str]
 
     class Config:
         case_sensitive = True
