@@ -16,8 +16,7 @@ class Note(Base):
     content = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
     resource_id = Column(Integer, ForeignKey("resources.id"), nullable=False)
-    # TODO: Set nullable=False when auth is fully implemented
-    creator_id = Column(Integer, ForeignKey("users.id"))
+    creator_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
     resource = relationship("Resource", foreign_keys=[resource_id], back_populates="notes")
     creator = relationship("User", foreign_keys=[creator_id], back_populates="notes")
